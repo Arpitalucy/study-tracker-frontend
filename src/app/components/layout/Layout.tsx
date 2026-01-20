@@ -7,9 +7,15 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ setIsAuthenticated }) => {
+    const handleLogout = () => {
+        localStorage.removeItem('studyTracker_auth');
+        localStorage.removeItem('studyTracker_token');
+        setIsAuthenticated(false);
+    };
+
     return (
         <div className="flex min-h-screen bg-slate-50">
-            <Sidebar />
+            <Sidebar onLogout={handleLogout} />
             <main className="flex-1 ml-64 p-8">
                 <Outlet />
             </main>
