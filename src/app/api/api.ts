@@ -51,8 +51,10 @@ export const api = {
 
     getNotifications: () => apiRequest('/notifications'),
     syncNotifications: (notifications: any[]) => apiRequest('/notifications/sync', { method: 'POST', body: JSON.stringify(notifications) }),
+    saveFCMToken: (token: string) => apiRequest('/users/me/fcm-token', { method: 'PUT', body: JSON.stringify({ token }) }),
 
     getChapters: (subjectId: string) => apiRequest(`/subjects/${subjectId}/chapters`),
     saveChapter: (chapter: any) => apiRequest('/chapters', { method: 'POST', body: JSON.stringify(chapter) }),
     deleteChapter: (id: string) => apiRequest(`/chapters/${id}`, { method: 'DELETE' }),
+    sendTestNotification: () => apiRequest('/notifications/test-fly', { method: 'POST' }),
 };

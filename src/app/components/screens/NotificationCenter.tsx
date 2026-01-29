@@ -35,11 +35,19 @@ export default function NotificationCenter() {
           api.getNotifications()
         ]);
 
-        // Convert ISO strings from backend to numbers for consistent sorting and state
-        const fetchedNotifs = backendNotifs.map((n: any) => ({
-          ...n,
-          timestamp: new Date(n.timestamp).getTime()
-        }));
+        // Convert ISO strings or Seconds/Millis from backend to Milliseconds for consistent sorting
+        const fetchedNotifs = backendNotifs.map((n: any) => {
+          let ts = n.timestamp;
+          // Heuristic: If timestamp is in seconds (e.g. 1.7 billion), it's less than 10 billion.
+          // Milliseconds (1.7 trillion) is much larger.
+          if (typeof ts === 'number' && ts < 10000000000) {
+            ts = ts * 1000;
+          }
+          return {
+            ...n,
+            timestamp: new Date(ts).getTime()
+          };
+        });
 
         setSubjects(fetchedSubjects);
 
@@ -52,15 +60,23 @@ export default function NotificationCenter() {
 
         fetchedSubjects.forEach((s: any) => {
           if (s.schedule && s.schedule.days.includes(currentDay)) {
-            const notifId = `study-${s.id}-${todayStr}`;
-            const existing = updatedNotifs.find(n => n.id === notifId);
+            // Check if backend already sent a notification for this subject TODAY
+            // We match by subjectId and date, NOT by notification ID (since backend generates UUIDs)
+            const existingBackendIdx = updatedNotifs.findIndex(n =>
+              n.subjectId === s.id &&
+              (n.scheduledDate === todayStr || n.timestamp >= new Date(todayStr).getTime())
+            );
 
-            if (!existing) {
+            if (existingBackendIdx === -1) {
+              // NO backend notification found -> Create a local "PENDING" placeholder
+              // This handles the case where the scheduler hasn't run yet or user is offline
+              const notifId = `study-${s.id}-${todayStr}`;
               const [sHour, sMin] = s.schedule.time.split(':').map(Number);
               const scheduledDate = new Date();
               scheduledDate.setHours(sHour, sMin, 0, 0);
 
               let status: 'PENDING' | 'MISSED' | 'COMPLETED' = 'PENDING';
+              // If time has passed by duration hours, mark missed
               if (now.getTime() > scheduledDate.getTime() + s.schedule.duration * 3600000) {
                 status = 'MISSED';
               }
@@ -78,25 +94,24 @@ export default function NotificationCenter() {
                 timestamp: Date.now()
               });
               changed = true;
-            } else if (existing.status === 'PENDING') {
-              const [sHour, sMin] = existing.scheduledTime.split(':').map(Number);
-              const scheduledDate = new Date();
-              scheduledDate.setHours(sHour, sMin, 0, 0);
-
-              if (now.getTime() > scheduledDate.getTime() + s.scheduledHours * 3600000) {
-                existing.status = 'MISSED';
-                changed = true;
-              }
             }
+            // Else: Backend already has an entry (either PENDING or SENT/COMPLETED). 
+            // We trust the backend's status.
           }
         });
 
         if (changed) {
           const syncedRaw = await api.syncNotifications(updatedNotifs);
-          const synced = syncedRaw.map((n: any) => ({
-            ...n,
-            timestamp: new Date(n.timestamp).getTime()
-          }));
+          const synced = syncedRaw.map((n: any) => {
+            let ts = n.timestamp;
+            if (typeof ts === 'number' && ts < 10000000000) {
+              ts = ts * 1000;
+            }
+            return {
+              ...n,
+              timestamp: new Date(ts).getTime()
+            };
+          });
           setNotifications(synced.sort((a: any, b: any) => b.timestamp - a.timestamp));
         } else {
           setNotifications(fetchedNotifs.sort((a: AppNotification, b: AppNotification) => b.timestamp - a.timestamp));
@@ -163,13 +178,26 @@ export default function NotificationCenter() {
                 )}
               </div>
             </div>
-            <Button variant="outline" size="sm" className="dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" onClick={async () => {
-              const cleared = notifications.map(n => ({ ...n, read: true }));
-              setNotifications(cleared);
-              await api.syncNotifications(cleared);
-            }}>
-              Mark all read
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" className="dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" onClick={async () => {
+                try {
+                  await api.sendTestNotification();
+                  toast.success("Test notification sent! Check your device/browser.");
+                } catch (err: any) {
+                  toast.error(`Failed to send test: ${err.message}`);
+                }
+              }}>
+                <Bell className="w-4 h-4 mr-2" />
+                Test Push
+              </Button>
+              <Button variant="outline" size="sm" className="dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800" onClick={async () => {
+                const cleared = notifications.map(n => ({ ...n, read: true }));
+                setNotifications(cleared);
+                await api.syncNotifications(cleared);
+              }}>
+                Mark all read
+              </Button>
+            </div>
           </div>
         </div>
       </header>

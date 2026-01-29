@@ -11,6 +11,9 @@ import SubjectManagement from './components/screens/SubjectManagement';
 import ChapterManagement from './components/screens/ChapterManagement';
 import NotificationCenter from './components/screens/NotificationCenter';
 import Analytics from './components/screens/Analytics';
+import { requestForToken, onMessageListener } from '../firebase';
+import { api } from './api/api';
+import { toast } from 'sonner';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -23,7 +26,40 @@ function App() {
 
     // Setup daily notifications
     setupDailyNotifications();
-  }, []);
+
+    // FCM Token Logic
+    if (isAuthenticated) {
+      requestForToken().then((token) => {
+        if (token) {
+          api.saveFCMToken(token).catch(err => console.error("Failed to save FCM token", err));
+          toast.success("Notifications enabled!");
+        } else {
+          toast.error("Notification permission not granted.");
+        }
+      }).catch(err => {
+        console.error("FCM Error:", err);
+        toast.error(`FCM Error: ${err.message || err}`);
+      });
+
+      onMessageListener().then((payload: any) => {
+        const title = payload?.notification?.title || "New Notification";
+        const body = payload?.notification?.body;
+
+        // Show in-app toast
+        toast(title, {
+          description: body,
+        });
+
+        // Show system notification even if in foreground (since user requested "browser notification")
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification(title, {
+            body: body,
+            icon: '/study-icon.png'
+          });
+        }
+      });
+    }
+  }, [isAuthenticated]);
 
   const setupDailyNotifications = () => {
     const now = new Date();
